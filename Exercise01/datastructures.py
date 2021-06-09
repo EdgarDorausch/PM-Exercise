@@ -1,4 +1,5 @@
 from __future__ import annotations
+import time
 from typing import *
 if TYPE_CHECKING:
     pass
@@ -25,7 +26,8 @@ T = TypeVar('T', bound=Particle)
 
 class CellList:
     def __init__(self,
-        part_list: List[T],
+        position_list: np.ndarray, # Shape [POS_DIM, NUM_PART]
+        property_list: np.ndarray, # Shape [PROP_DIM, NUM_PART]
         pos_min: np.ndarray, # Shape [POS_DIM]
         pos_max: np.ndarray, # Shape [POS_DIM]
         r_cutoff: float
@@ -35,28 +37,23 @@ class CellList:
         self.r_cutoff = r_cutoff
         self.pos_min = pos_min
         self.pos_max = pos_max
+        self.position_list = position_list
+        self.properties_list = property_list
 
-        POS_DIM = part_list[0].position.shape[0]
-        PROP_DIM = part_list[0].properties.shape[0]
+        POS_DIM, NUM_PART = position_list.shape
+        PROP_DIM = property_list.shape[0]
+        assert NUM_PART == property_list.shape[1], f'Length missmatch: {NUM_PART} != {property_list.shape[1]}'
 
         self.grid_res = np.ceil((pos_max-pos_min)/r_cutoff).astype(int)
-
-        # Construct numpy arrays containing all position and all property information respectively
-        length = len(part_list)
-        self.position_list = np.empty([POS_DIM, length])
-        self.properties_list = np.empty([PROP_DIM, length])
 
         # create numpy array containing the cell lists
         fill_empty_list = np.vectorize(lambda x: [], otypes=[object])
         self.cell_list = fill_empty_list(np.empty(shape=self.grid_res, dtype=object))
 
         # fill arrays
-        for i, particel in enumerate(part_list):
-            self.position_list[:,i] = particel.position
-            self.properties_list[:,i] = particel.properties
-
-            cell_idx = tuple(x for x in np.nditer(np.floor((particel.position-pos_min)/r_cutoff).astype(int)))
-            self.cell_list[cell_idx].append(i)
+        for p_idx in range(NUM_PART):
+            cell_idx = tuple(x for x in np.nditer(np.floor((position_list[:,p_idx]-pos_min)/r_cutoff).astype(int)))
+            self.cell_list[cell_idx].append(p_idx)
 
     def get_adjacent_cells(self, cell_index: Sequence[int]):
         # generate all neighbors along one dimension
@@ -89,22 +86,26 @@ class CellList:
 
 class VerletList:
     def __init__(self,
-        part_list: List[T],
+        position_list: np.ndarray, # Shape [POS_DIM, NUM_PART]
+        property_list: np.ndarray, # Shape [PROP_DIM, NUM_PART]
         pos_min: np.ndarray, # Shape [POS_DIM]
         pos_max: np.ndarray, # Shape [POS_DIM]
         r_cutoff: float,
         r_skin: float
     ) -> None:
+        NUM_PART = position_list.shape[1]
+        print(f'Constructing Verlet List for {NUM_PART} particles')
+        t0 = time.time()
+
         self.r_total = r_cutoff + r_skin
         self.r_skin = r_skin
         self.r_cutoff = r_cutoff
-        self.cell_list = CellList(part_list, pos_min, pos_max, self.r_total)
+        self.cell_list = CellList(position_list, property_list, pos_min, pos_max, self.r_total)
 
-        length = len(part_list)
         fill_empty_list = np.vectorize(lambda x: [], otypes=[object])
-        self.verlet_list = fill_empty_list(np.empty(shape=[length], dtype=object))
+        self.verlet_list = fill_empty_list(np.empty(shape=[NUM_PART], dtype=object))
 
-        for particle_index in range(length):
+        for particle_index in range(NUM_PART):
 
             own_cell_index =  self.cell_list.get_cell_index(particle_index)
             own_cell_list = self.cell_list.cell_list[own_cell_index]
@@ -117,3 +118,7 @@ class VerletList:
                 self.verlet_list[particle_index].extend([
                     q_idx for q_idx in neighbor_cell_list if self.cell_list.get_particle_distance(q_idx, particle_index) <= self.r_total
                     ])
+
+        t1 = time.time()
+        print(f'Verlet List construction took ~{t1-t0:.5}s')
+        

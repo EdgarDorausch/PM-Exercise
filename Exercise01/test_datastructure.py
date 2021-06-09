@@ -19,10 +19,13 @@ class MyParticle(Particle):
 
 if __name__ == "__main__":
     np.random.seed(0)
-    pl = [MyParticle() for _ in range(100)]
+    # pl = [MyParticle() for _ in range(100)]
+    pos_list = np.random.uniform(size=[2,100])
+    prop_list = np.random.uniform(size=[2,100])
 
     vl = VerletList(
-        pl,
+        pos_list,
+        prop_list,
         pos_min=np.array([0.,0.]),
         pos_max=np.array([1.,1.]),
         r_cutoff=0.1,
